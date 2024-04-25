@@ -1,34 +1,39 @@
 use crate::allocator::{
     demand::{InputDemand, ProductDemand},
     facility::Facility,
-    id::Id,
 };
 
-pub struct Process<'a> {
-    id: Id,
+pub struct Process {
     name: String,
-    raw_inputs: Vec<InputDemand<'a>>,
-    intermediate_inputs: Vec<ProductDemand<'a>>,
-    outputs: Vec<ProductDemand<'a>>,
+    raw_inputs: Vec<InputDemand>,
+    intermediate_inputs: Vec<ProductDemand>,
+    outputs: Vec<ProductDemand>,
 }
-impl Facility for Process<'_> {
+impl Process {
+    pub fn new(
+        name: String,
+        raw_inputs: Vec<InputDemand>,
+        intermediate_inputs: Vec<ProductDemand>,
+        outputs: Vec<ProductDemand>,
+    ) -> Self {
+        Self {
+            name,
+            raw_inputs,
+            intermediate_inputs,
+            outputs,
+        }
+    }
+}
+impl Facility for Process {
     fn name(&self) -> &str {
         &self.name
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn set_id(&mut self, id: Id) {
-        self.id = id;
     }
 
     fn amount_for(&self, product_demand: ProductDemand) -> Option<f64> {
         let output = self
             .outputs
             .iter()
-            .find(|d| d.resource.id() == product_demand.resource.id())?
+            .find(|d| d.name == product_demand.name)?
             .units;
 
         Some(product_demand.units / output)

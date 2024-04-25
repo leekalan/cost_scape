@@ -1,18 +1,16 @@
 use std::{borrow::Borrow, collections::HashMap};
 
 use crate::allocator::{
-    allocation_pool::{AllocationPool, IdRequest},
+    allocation_pool::{AllocationPool, NameRequest},
     facility::Facility,
-    id::Id,
     resource::{intermediate::Intermediate, raw_input::RawInput},
 };
 
 #[derive(Default)]
 pub struct AllocatorPool {
-    inputs: HashMap<Id, Box<dyn RawInput>>,
-    products: HashMap<Id, Box<dyn Intermediate>>,
-    facilities: HashMap<Id, Box<dyn Facility>>,
-    index: u32,
+    inputs: HashMap<String, Box<dyn RawInput>>,
+    products: HashMap<String, Box<dyn Intermediate>>,
+    facilities: HashMap<String, Box<dyn Facility>>,
 }
 impl AllocatorPool {
     pub fn new() -> Self {
@@ -20,30 +18,27 @@ impl AllocatorPool {
     }
 }
 impl AllocationPool for AllocatorPool {
-    fn get_id(&self, id: Id) -> IdRequest {
-        if let Some(input) = self.inputs.get(&id) {
-            IdRequest::Input(input.borrow())
-        } else if let Some(product) = self.products.get(&id) {
-            IdRequest::Product(product.borrow())
-        } else if let Some(facility) = self.facilities.get(&id) {
-            IdRequest::Facility(facility.borrow())
+    fn get_name(&self, name: &str) -> NameRequest {
+        if let Some(input) = self.inputs.get(name) {
+            NameRequest::Input(input.borrow())
+        } else if let Some(product) = self.products.get(name) {
+            NameRequest::Product(product.borrow())
+        } else if let Some(facility) = self.facilities.get(name) {
+            NameRequest::Facility(facility.borrow())
         } else {
-            IdRequest::None
+            NameRequest::None
         }
     }
 
     fn add_input(&mut self, input: Box<dyn RawInput>) {
-        self.inputs.insert(Id { id: self.index }, input);
-        self.index += 1;
+        self.inputs.insert(input.name().to_owned(), input);
     }
 
     fn add_product(&mut self, product: Box<dyn Intermediate>) {
-        self.products.insert(Id { id: self.index }, product);
-        self.index += 1;
+        self.products.insert(product.name().to_owned(), product);
     }
 
     fn add_facility(&mut self, facility: Box<dyn Facility>) {
-        self.facilities.insert(Id { id: self.index }, facility);
-        self.index += 1;
+        self.facilities.insert(facility.name().to_owned(), facility);
     }
 }

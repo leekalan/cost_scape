@@ -1,30 +1,22 @@
-use crate::allocator::{
-    facility::Facility,
-    id::Id,
-    resource::{intermediate::Intermediate, Resource},
-};
+use crate::allocator::resource::{intermediate::Intermediate, Resource};
 
 #[derive(Clone)]
-pub struct IntermediateResource<'a> {
-    id: Id,
+pub struct IntermediateResource {
     name: String,
-    producer: &'a dyn Facility,
+    producer: String,
 }
-impl<'a> Resource for IntermediateResource<'a> {
+impl IntermediateResource {
+    pub fn new(name: String, producer: String) -> Self {
+        Self { name, producer }
+    }
+}
+impl Resource for IntermediateResource {
     fn name(&self) -> &str {
         &self.name
     }
-
-    fn id(&self) -> crate::allocator::id::Id {
-        self.id
-    }
-
-    fn set_id(&mut self, id: crate::allocator::id::Id) {
-        self.id = id;
-    }
 }
-impl<'a> Intermediate for IntermediateResource<'a> {
-    fn producer(&self) -> &dyn crate::allocator::facility::Facility {
-        self.producer
+impl Intermediate for IntermediateResource {
+    fn producer(&self) -> &str {
+        &self.producer
     }
 }

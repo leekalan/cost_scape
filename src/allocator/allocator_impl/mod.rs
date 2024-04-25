@@ -1,6 +1,5 @@
 pub mod allocator_pool;
 pub mod intermediate_resource;
-pub mod monetary_expenses;
 pub mod process;
 pub mod raw_resource;
 
@@ -11,13 +10,13 @@ use super::{
     allocation_pool::AllocationPool,
     command::{Command, DemandChange},
     demand::{FacilityDemand, InputDemand, ProductDemand},
-    id::Id,
+    resource::intermediate::Intermediate,
 };
 
 #[derive(Default, Clone)]
 pub struct Allocator {
-    input_demands: HashMap<Id, f64>,
-    product_demands: HashMap<Id, f64>,
+    input_demands: HashMap<String, f64>,
+    product_demands: HashMap<String, f64>,
 }
 
 impl Allocator {
@@ -27,14 +26,14 @@ impl Allocator {
 
     fn change_input_demand(&mut self, demand: InputDemand) {
         self.input_demands
-            .entry(demand.resource.id())
+            .entry(demand.name)
             .and_modify(|v| *v += demand.units)
             .or_insert(demand.units);
     }
 
     fn change_product_demand(&mut self, demand: ProductDemand) {
         self.product_demands
-            .entry(demand.resource.id())
+            .entry(demand.name)
             .and_modify(|v| *v += demand.units)
             .or_insert(demand.units);
     }
@@ -42,60 +41,59 @@ impl Allocator {
 
 impl Allocation for Allocator {
     fn execute(&mut self, command: &Command) {
-        match command.demand_change {
-            DemandChange::Input(t0) => self.change_input_demand(InputDemand {
-                resource: t0,
+        match &command.demand_change {
+            DemandChange::Input(name) => self.change_input_demand(InputDemand {
+                name: name.to_owned(),
                 units: command.units,
             }),
-            DemandChange::Product(t0) => self.change_product_demand(ProductDemand {
-                resource: t0,
+            DemandChange::Product(name) => self.change_product_demand(ProductDemand {
+                name: name.to_owned(),
                 units: command.units,
             }),
         }
     }
 
     fn rollback(&mut self, command: &Command) {
-        match command.demand_change {
-            DemandChange::Input(t0) => self.change_input_demand(InputDemand {
-                resource: t0,
+        match &command.demand_change {
+            DemandChange::Input(name) => self.change_input_demand(InputDemand {
+                name: name.to_owned(),
                 units: -command.units,
             }),
-            DemandChange::Product(t0) => self.change_product_demand(ProductDemand {
-                resource: t0,
+            DemandChange::Product(name) => self.change_product_demand(ProductDemand {
+                name: name.to_owned(),
                 units: -command.units,
             }),
         }
     }
 
-    fn allocate<'a>(&self, pool: &'a impl AllocationPool) -> AllocationResult<'a> {
+    fn allocate(&self, pool: &impl AllocationPool) -> AllocationResult {
         let mut input_demands = self.input_demands.clone();
         let mut overall_products = self.product_demands.clone();
         let mut product_demands = self.product_demands.clone();
-        let mut facility_demands: HashMap<Id, f64> = HashMap::new();
+        let mut facility_demands = HashMap::new();
 
         while !product_demands.is_empty() {
             let temp = product_demands;
             product_demands = HashMap::new();
-            for (id, units) in temp {
+            for (name, units) in temp {
                 // Unwrap as it shouldn't happen, and if it does its unretrievable
-                let resource = pool.get_id(id).product().unwrap();
-                let facility = resource.producer();
+                let resource: &dyn Intermediate = pool.get_name(&name).product().unwrap();
                 // Unwrap as it shouldn't happen, and if it does its unretrievable
-                let count = facility
-                    .amount_for(ProductDemand { resource, units })
-                    .unwrap();
+                let facility = pool.get_name(resource.producer()).facility().unwrap();
+                // Unwrap as it shouldn't happen, and if it does its unretrievable
+                let count = facility.amount_for(ProductDemand { name, units }).unwrap();
                 facility_demands
-                    .entry(facility.id())
+                    .entry(facility.name())
                     .and_modify(|v| *v += count)
                     .or_insert(count);
 
                 for product_demand in facility.outputs() {
-                    if product_demand.resource.id() == resource.id() {
+                    if product_demand.name == resource.name() {
                         continue;
                     }
                     let facility_demand = count * product_demand.units;
                     product_demands
-                        .entry(product_demand.resource.id())
+                        .entry(product_demand.name)
                         .and_modify(|v| *v -= facility_demand)
                         .or_insert(-facility_demand);
                 }
@@ -103,7 +101,7 @@ impl Allocation for Allocator {
                 for input_demand in facility.raw_inputs() {
                     let facility_demand = count * input_demand.units;
                     input_demands
-                        .entry(input_demand.resource.id())
+                        .entry(input_demand.name)
                         .and_modify(|v| *v += facility_demand)
                         .or_insert(facility_demand);
                 }
@@ -111,38 +109,37 @@ impl Allocation for Allocator {
                 for product_demand in facility.intermediate_inputs() {
                     let facility_demand = count * product_demand.units;
                     product_demands
-                        .entry(product_demand.resource.id())
+                        .entry(product_demand.name)
                         .and_modify(|v| *v += facility_demand)
                         .or_insert(facility_demand);
                 }
 
-                overall_products.extend(product_demands.iter());
+                overall_products.extend(
+                    product_demands
+                        .iter()
+                        .map(|(name, units)| (name.to_owned(), *units)),
+                );
             }
         }
 
         let inputs = input_demands
             .into_iter()
-            .map(|(id, units)| InputDemand {
+            .map(|(name, units)| InputDemand {
                 // Unwrap as it shouldn't happen, and if it does its unretrievable
-                resource: pool.get_id(id).raw_input().unwrap(),
+                name,
                 units,
             })
             .collect();
 
         let products = overall_products
             .into_iter()
-            .map(|(id, units)| ProductDemand {
-                // Unwrap as it shouldn't happen, and if it does its unretrievable
-                resource: pool.get_id(id).product().unwrap(),
-                units,
-            })
+            .map(|(name, units)| ProductDemand { name, units })
             .collect();
 
         let facilities = facility_demands
             .into_iter()
-            .map(|(id, units)| FacilityDemand {
-                // Unwrap as it shouldn't happen, and if it does its unretrievable
-                facility: pool.get_id(id).facility().unwrap(),
+            .map(|(name, units)| FacilityDemand {
+                name: name.to_owned(),
                 units,
             })
             .collect();
@@ -152,5 +149,87 @@ impl Allocation for Allocator {
             products,
             facilities,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use self::{
+        allocator_pool::AllocatorPool, intermediate_resource::IntermediateResource,
+        process::Process, raw_resource::RawResource,
+    };
+
+    use super::*;
+
+    #[test]
+    fn test() {
+        let mut pool = AllocatorPool::new();
+
+        pool.add_input(Box::new(RawResource::new("monetary expenses".to_string())));
+        pool.add_input(Box::new(RawResource::new("employees".to_string())));
+        pool.add_facility(Box::new(Process::new(
+            "human resources".to_string(),
+            vec![
+                InputDemand {
+                    name: "employees".to_string(),
+                    units: 8.0,
+                },
+                InputDemand {
+                    name: "monetary expenses".to_string(),
+                    units: 200.0,
+                },
+            ],
+            vec![],
+            vec![ProductDemand {
+                name: "worker divisions".to_string(),
+                units: 1.0,
+            }],
+        )));
+        pool.add_product(Box::new(IntermediateResource::new(
+            "worker divisions".to_string(),
+            "human resources".to_string(),
+        )));
+
+        let mut allocator = Allocator::new();
+
+        allocator.change_product_demand(ProductDemand {
+            name: "worker divisions".to_string(),
+            units: 4.0,
+        });
+
+        allocator.change_input_demand(InputDemand {
+            name: "monetary expenses".to_string(),
+            units: -100.0,
+        });
+
+        let result = allocator.allocate(&pool);
+
+        println!(
+            "Employees: {},\nCost: {},\nHR: {},\nWorker Divisions: {}",
+            result
+                .inputs
+                .iter()
+                .find(|d| d.name == "employees")
+                .unwrap()
+                .units,
+            result
+                .inputs
+                .iter()
+                .find(|d| d.name == "monetary expenses")
+                .unwrap()
+                .units,
+            result
+                .facilities
+                .iter()
+                .find(|d| d.name == "human resources")
+                .unwrap()
+                .units,
+            result
+                .products
+                .iter()
+                .find(|d| d.name == "worker divisions")
+                .unwrap()
+                .units,
+        );
     }
 }

@@ -1,13 +1,11 @@
-use super::resource::{intermediate::Intermediate, raw_input::RawInput};
-
-#[derive(Clone, Copy)]
-pub struct Command<'a> {
-    pub demand_change: DemandChange<'a>,
+#[derive(Clone)]
+pub struct Command {
+    pub demand_change: DemandChange,
     pub units: f64,
 }
 
-#[derive(Clone, Copy)]
-pub enum DemandChange<'a> {
-    Input(&'a dyn RawInput),
-    Product(&'a dyn Intermediate),
+#[derive(Clone)]
+pub enum DemandChange {
+    Input(String),
+    Product(String),
 }

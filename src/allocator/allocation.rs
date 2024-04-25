@@ -7,11 +7,11 @@ use super::{
 pub trait Allocation {
     fn execute(&mut self, command: &Command);
     fn rollback(&mut self, command: &Command);
-    fn allocate<'a>(&self, allocation_pool: &'a impl AllocationPool) -> AllocationResult<'a>;
+    fn allocate(&self, allocation_pool: &impl AllocationPool) -> AllocationResult;
 }
 
-pub struct AllocationResult<'a> {
-    pub inputs: Vec<InputDemand<'a>>,
-    pub products: Vec<ProductDemand<'a>>,
-    pub facilities: Vec<FacilityDemand<'a>>,
+pub struct AllocationResult {
+    pub inputs: Vec<InputDemand>,
+    pub products: Vec<ProductDemand>,
+    pub facilities: Vec<FacilityDemand>,
 }
