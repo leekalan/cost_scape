@@ -1,4 +1,8 @@
 pub mod allocator_pool;
+pub mod intermediate_resource;
+pub mod monetary_expenses;
+pub mod process;
+pub mod raw_resource;
 
 use std::collections::HashMap;
 
@@ -76,11 +80,25 @@ impl Allocation for Allocator {
                 // Unwrap as it shouldn't happen, and if it does its unretrievable
                 let resource = pool.get_id(id).product().unwrap();
                 let facility = resource.producer();
-                let count = facility.amount_for(units);
+                // Unwrap as it shouldn't happen, and if it does its unretrievable
+                let count = facility
+                    .amount_for(ProductDemand { resource, units })
+                    .unwrap();
                 facility_demands
                     .entry(facility.id())
                     .and_modify(|v| *v += count)
                     .or_insert(count);
+
+                for product_demand in facility.outputs() {
+                    if product_demand.resource.id() == resource.id() {
+                        continue;
+                    }
+                    let facility_demand = count * product_demand.units;
+                    product_demands
+                        .entry(product_demand.resource.id())
+                        .and_modify(|v| *v -= facility_demand)
+                        .or_insert(-facility_demand);
+                }
 
                 for input_demand in facility.raw_inputs() {
                     let facility_demand = count * input_demand.units;
@@ -97,6 +115,7 @@ impl Allocation for Allocator {
                         .and_modify(|v| *v += facility_demand)
                         .or_insert(facility_demand);
                 }
+
                 overall_products.extend(product_demands.iter());
             }
         }
@@ -128,6 +147,10 @@ impl Allocation for Allocator {
             })
             .collect();
 
-        AllocationResult { inputs, products, facilities }
+        AllocationResult {
+            inputs,
+            products,
+            facilities,
+        }
     }
 }
